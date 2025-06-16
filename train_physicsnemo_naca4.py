@@ -1,7 +1,9 @@
+# Example training script using NVIDIA PhysicsNeMo
 from dataclasses import dataclass
-import math
 
 import torch
+
+# Import the PhysicsNemo framework and PDEs
 import physicsnemo as nemo
 from physicsnemo.pdes import UnsteadyNavierStokes
 from physicsnemo.models import GraphNeuralOperator
@@ -10,6 +12,8 @@ from physicsnemo.solvers import PhysicsSolver
 
 def generate_naca4_airfoil(code: str, num_points: int = 100):
     """Return x, y coordinates of a NACA 4 digit airfoil using cosine spacing."""
+    import math
+
     if len(code) != 4 or not code.isdigit():
         raise ValueError("NACA code must be 4 digits")
 
@@ -17,9 +21,7 @@ def generate_naca4_airfoil(code: str, num_points: int = 100):
     p = int(code[1]) / 10.0
     t = int(code[2:]) / 100.0
 
-    x = [
-        0.5 * (1 - math.cos(math.pi * i / (num_points - 1))) for i in range(num_points)
-    ]
+    x = [0.5 * (1 - math.cos(math.pi * i / (num_points - 1))) for i in range(num_points)]
 
     y_t = [
         5
@@ -63,61 +65,33 @@ def generate_rect_mesh(num: int = 32, x_range=(-0.5, 1.5), y_range=(-0.5, 0.5)):
     return [[x, y] for y in ys for x in xs]
 
 
-class NACA4Dataset(torch.utils.data.Dataset):
-    """Dataset generating meshes for random NACA 4 digit airfoils."""
-
-    def __init__(self, codes):
-        self.codes = codes
-        self.input_dim = 2
-        self.output_dim = 2
-
-    def __len__(self):
-        return len(self.codes)
-
-    def __getitem__(self, idx):
-        code = self.codes[idx]
-        _ = generate_naca4_airfoil(code)
-        mesh = generate_rect_mesh()
-        mesh = torch.tensor(mesh, dtype=torch.float32)
-        target = torch.zeros(mesh.shape[0], self.output_dim)
-        return mesh, target
-
-
 class NACA4Problem(nemo.PDEProblem):
-    """Unsteady Navier-Stokes problem around a NACA 4 airfoil."""
+    """Define the unsteady Navier-Stokes problem around a NACA4 airfoil."""
 
     def __init__(self, code: str):
+        self.code = code
         x_coords, y_coords = generate_naca4_airfoil(code)
         mesh = generate_rect_mesh()
-        geometry = nemo.geometry.Mesh(
-            mesh, boundaries={"airfoil": list(zip(x_coords, y_coords))}
-        )
+        geometry = nemo.geometry.Mesh(mesh, boundaries={"airfoil": list(zip(x_coords, y_coords))})
         equations = UnsteadyNavierStokes(nu=1e-3, rho=1.0)
         super().__init__(geometry=geometry, equations=equations)
-
-
 
 
 @dataclass
 class TrainConfig:
     batch_size: int = 4
-    epochs: int = 100
+    epochs: int = 10
     learning_rate: float = 1e-4
 
 
 def main(cfg: TrainConfig) -> None:
-    codes = ["2412", "0012", "4412", "2424"]
+    codes = ["2412", "0012"]
     problems = [NACA4Problem(c) for c in codes]
     dataset = nemo.data.PDEDataset(problems)
-    dataloader = nemo.data.PDEDataLoader(
-        dataset, batch_size=cfg.batch_size, shuffle=True
-    )
+    dataloader = nemo.data.PDEDataLoader(dataset, batch_size=cfg.batch_size, shuffle=True)
 
     model = GraphNeuralOperator(in_features=2, out_features=2)
-    solver = PhysicsSolver(
-        model=model,
-        optimizer=torch.optim.Adam(model.parameters(), lr=cfg.learning_rate),
-    )
+    solver = PhysicsSolver(model=model, optimizer=torch.optim.Adam(model.parameters(), lr=cfg.learning_rate))
 
     ptrainer = nemo.framework.PhysicsTrainer(max_epochs=cfg.epochs)
     ptrainer.fit(solver=solver, train_dataloaders=dataloader)
