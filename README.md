@@ -6,8 +6,8 @@ around the airfoil using cosine spacing.
 
 ## Training
 
-Install dependencies such as `torch` and `pytorch_lightning` and run the training script:
+Install dependencies such as `torch` and `physicsnemo` and run the PhysicsNemo training script:
 
 ```bash
-python train_gno_naca4.py
+python train_physicsnemo_naca4.py
 ```
